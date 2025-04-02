@@ -20,7 +20,7 @@ class CategoryController extends Controller
     public function index(Request $request)
     {
         return CategoryResource::collection(
-            Category::orderBy('created_at', 'desc')->pagination(10)
+            Category::orderBy('id', 'desc')->paginate(10)
         );
     }
 
@@ -37,15 +37,16 @@ class CategoryController extends Controller
      */
     public function store(StoreCategoryRequest $request)
     {
+        $user = $request->user();
+        if (!$user) {
+            return abort(403, 'Unauthorized action.');
+        }
         $data = $request->validated();
-
         if (isset($data['image'])) {
             $relativePath = $this->saveImage($data['image']);
             $data['image'] = $relativePath;
         }
-
         $category = Category::create($data);
-
         return new CategoryResource($category);
     }
 
@@ -81,11 +82,6 @@ class CategoryController extends Controller
         if (isset($data['image'])) {
             $relativePath = $this->saveImage($data['image']);
             $data['image'] = $relativePath;
-
-            if ($category->image) {
-                $absolutePath = public_path($category->image);
-                File::delete($absolutePath);
-            }
         }
 
         $category->update($data);
@@ -98,9 +94,21 @@ class CategoryController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Category $category)
+    public function destroy(Category $category, Request $request)
     {
-        //
+        $user = $request->user();
+        if (!$user) {
+            return abort(403, 'Unauthorized action.');
+        }
+
+        $category->delete();
+
+        if ($category->image) {
+            $absolutePath = public_path($category->image);
+            File::delete($absolutePath);
+        }
+
+        return response('', 204);
     }
 
     private function saveImage($image)
@@ -122,16 +130,13 @@ class CategoryController extends Controller
             throw new \Exception('Did not match data URL with image data.');
         }
 
-        $dir = 'images/';
-        $file = Str::random() . '/' . $type;
-        $absolutePath = public_path($dir);
-        $relativePath = $dir . $file;
-        if (!File::exists($absolutePath)) {
-            File::makeDirectory($absolutePath, 0755, true);
-        }
-        file_put_contents($relativePath, $image);
+        // Convert the decoded image back to base64
+        $base64Image = base64_encode($image);
 
-        return $relativePath;
+        // Add the data URI prefix back to the base64 string
+        $dataUri = 'data:image/' . $type . ';base64,' . $base64Image;
+
+        return $dataUri; // Return the full data URI
     }
 
     // public function createQuestion($data)
@@ -150,4 +155,27 @@ class CategoryController extends Controller
 
     //     return SurveyQuestion::create($validator->validated());
     // }
+
+    public function search(Request $request)
+    {
+        $searchValue = $request->query('n');
+        $categories = Category::where('name', 'LIKE', '%' . $searchValue . '%')
+            ->orWhere('slug', 'LIKE', '%' . $searchValue . '%')
+            ->get();
+
+        return CategoryResource::collection($categories);
+    }
+
+    public function changeStatus(Request $request)
+    {
+        $category = Category::find($request->id);
+        if (!$category) {
+            return response()->json([
+                'message' => 'Category not found.'
+            ], 404);
+        }
+        $category->status = $request->status;
+        $category->save();
+        return new CategoryResource($category);
+    }
 }

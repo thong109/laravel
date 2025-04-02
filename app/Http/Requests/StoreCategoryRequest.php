@@ -31,7 +31,8 @@ class StoreCategoryRequest extends FormRequest
         return [
             'name' => 'required|string|min:3|max:255|unique:categories',
             'slug' => 'required|string|min:3|max:255|unique:categories',
-            'status' => 'required|boolean',
+            'image' => 'required',
+            'status' => 'required',
         ];
     }
 }
